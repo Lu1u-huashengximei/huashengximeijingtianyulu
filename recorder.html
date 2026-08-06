@@ -575,8 +575,10 @@ async function copyText(id){
 async function downloadAudio(id){
   const all=await dbAll(); const r=all.find(x=>x.id===id);
   if(!r) return;
-  const url=URL.createObjectURL(r.blob); const a=document.createElement('a');
-  a.href=url; a.download=(r.title||'record')+'.webm'; a.click();
+  const url=URL.createObjectURL(r.blob, {type:'audio/webm'}); const a=document.createElement('a');
+  a.href=url; a.type='audio/webm';
+  a.download=(r.title||'record')+'.mp3'; // 用 .mp3 扩展名，系统/播放器更容易识别为音频
+  a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 async function delRec(id){
