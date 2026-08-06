@@ -298,6 +298,12 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 返回 refresh_token（仅已授权时），用于固化到环境变量，重启不丢
+    if (p === '/api/baidu/token-info' && req.method === 'GET') {
+      if (!tokens.refresh_token) return sendJSON(res, 400, { ok: false, error: '尚未授权，无可复制的 refresh_token' });
+      return sendJSON(res, 200, { ok: true, refresh_token: tokens.refresh_token });
+    }
+
     // 生成授权链接
     if (p === '/api/baidu/auth-url') {
       if (!tokens.ak || !tokens.sk) return sendJSON(res, 400, { ok: false, error: '请先在上方填写 API Key / Secret Key 并保存配置' });
