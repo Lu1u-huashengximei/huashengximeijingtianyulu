@@ -470,7 +470,7 @@ function fmtFileTs(ts){ const d=new Date(ts||Date.now()); const p=n=>String(n).p
 async function syncToBaidu(rec){
   if(!$('syncOn').checked) return {skipped:true};
   const safe=(rec.title||'record').replace(/[\\/:*?"<>|]/g,'_');
-  const audioName=`${safe}_${fmtFileTs(rec.createdAt)}.webm`;
+  const audioName=`${safe}_${fmtFileTs(rec.createdAt)}.mp3`;
   const audioData=await blobToDataURL(rec.blob);
   const meta={
     title: rec.title,
