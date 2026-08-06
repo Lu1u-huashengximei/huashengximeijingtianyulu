@@ -1,0 +1,13 @@
+# Render 一键部署配置（免费层）
+# 在 Render 新建 Web Service 并连接本仓库后，会自动按此配置部署，无需手填命令
+services:
+  - type: web
+    name: suiji-recorder
+    runtime: node
+    plan: free
+    buildCommand: "echo skip"
+    startCommand: "npm start"
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

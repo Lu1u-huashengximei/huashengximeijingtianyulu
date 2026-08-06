@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>随记 · 录音转文字</title>
+<style>
+  :root {
+    --bg: #f5f6fb;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --muted: #8a90a2;
+    --line: #e9ebf2;
+    --brand: #5b6cff;
+    --brand-soft: #eef0ff;
+    --rec: #ff4d5e;
+    --ok: #1fb877;
+    --shadow: 0 8px 30px rgba(40, 50, 90, .08);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+  }
+  .app {
+    width: 100%;
+    max-width: 560px;
+    padding: 16px 16px 40px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px 14px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; }
+  .logo .dot { width: 26px; height: 26px; border-radius: 9px; background: linear-gradient(135deg, var(--brand), #8a7bff); display: grid; place-items: center; color: #fff; font-size: 15px; }
+  .saved-count { font-size: 12px; color: var(--muted); background: var(--card); padding: 6px 10px; border-radius: 999px; box-shadow: var(--shadow); }
+
+  .tabs { display: flex; background: var(--card); padding: 5px; border-radius: 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
+  .tabs button {
+    flex: 1; border: 0; background: transparent; padding: 11px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; color: var(--muted); cursor: pointer; transition: .2s;
+  }
+  .tabs button.active { background: var(--brand); color: #fff; }
+
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+
+  /* Record view */
+  .rec-wrap { text-align: center; }
+  .timer { font-size: 44px; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+  .status { color: var(--muted); font-size: 14px; margin-top: 4px; min-height: 20px; }
+
+  .wave { width: 100%; height: 90px; margin: 18px 0; border-radius: 14px; background: var(--brand-soft); display: block; }
+
+  .btn-rec {
+    width: 96px; height: 96px; border-radius: 50%; border: none; margin: 6px auto 4px;
+    background: var(--rec); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 10px 26px rgba(255,77,94,.35); transition: transform .15s, background .2s; display: grid; place-items: center;
+  }
+  .btn-rec:active { transform: scale(.95); }
+  .btn-rec.idle { background: var(--brand); box-shadow: 0 10px 26px rgba(91,108,255,.35); }
+  .btn-rec .ring { width: 34px; height: 34px; border-radius: 8px; background: #fff; }
+  .btn-rec .ring.round { border-radius: 50%; width: 30px; height: 30px; }
+
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .speakers { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 4px; }
+  .sp-label { font-size: 13px; color: var(--muted); margin-right: 2px; }
+  .sp { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 15px; font-size: 14px; color: var(--ink); cursor: pointer; transition: .15s; }
+  .sp.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 2px 9px; margin-left: 7px; vertical-align: middle; }
+  .sp-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .sf { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .sf.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+  .list-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .list-title { font-weight: 700; font-size: 16px; }
+  .export-btn { border: 1px solid var(--brand); color: var(--brand); background: #fff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+  .live {
+    margin-top: 18px; text-align: left; background: var(--bg); border-radius: 14px; padding: 14px;
+    min-height: 70px; font-size: 15px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; word-break: break-word;
+  }
+  .live .interim { color: var(--muted); }
+  .live .placeholder { color: var(--muted); }
+
+  .save-box { margin-top: 16px; display: none; }
+  .save-box.show { display: block; }
+  .field { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 15px; margin-bottom: 10px; background: #fff; color: var(--ink); }
+  .field:focus { outline: none; border-color: var(--brand); }
+  .row { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; border: 0; border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--brand); color: #fff;
+  }
+  .btn.ghost { background: var(--bg); color: var(--ink); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .loc-note { font-size: 12px; color: var(--muted); margin-bottom: 10px; text-align: left; }
+
+  .sync-box { margin-top: 16px; text-align: left; background: var(--bg); border-radius: 14px; padding: 2px 14px; }
+  .sync-box summary { cursor: pointer; font-size: 14px; font-weight: 600; padding: 10px 0; color: var(--ink); outline: none; }
+  .sync-inner { padding: 2px 0 12px; }
+  .sync-tip { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 0 0 10px; }
+  .sync-tip code { background: #fff; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line); }
+  .sync-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 4px; }
+
+  /* List view */
+  .search { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 15px; margin-bottom: 14px; background: #fff; }
+  .search:focus { outline: none; border-color: var(--brand); }
+  .item { background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 14px; margin-bottom: 12px; }
+  .item .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .item .title { font-weight: 700; font-size: 16px; word-break: break-word; }
+  .item .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .item .text { font-size: 14px; line-height: 1.6; color: #3a4154; margin: 10px 0; white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow: auto; }
+  .item .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .item .actions button { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .item .actions button.danger { color: var(--rec); border-color: #ffd9dd; }
+  .item audio { width: 100%; margin: 8px 0 4px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  .toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
+    background: #1f2430; color: #fff; padding: 11px 18px; border-radius: 12px; font-size: 14px;
+    opacity: 0; transition: .25s; pointer-events: none; z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><span class="dot">🎙️</span> 随记</div>
+    <div class="saved-count" id="savedCount">0 条记录</div>
+  </header>
+
+  <div class="tabs">
+    <button id="tabRec" class="active" onclick="switchTab('rec')">录音</button>
+    <button id="tabList" onclick="switchTab('list')">我的记录</button>
+  </div>
+
+  <!-- 录音页 -->
+  <section id="recView">
+    <div class="card rec-wrap">
+      <div class="timer" id="timer">00:00</div>
+      <div class="status" id="status">准备就绪</div>
+      <div class="speakers" id="speakers">
+        <span class="sp-label">说话人</span>
+        <button class="sp" data-sp="花生" onclick="setSpeaker('花生')">花生</button>
+        <button class="sp" data-sp="西梅" onclick="setSpeaker('西梅')">西梅</button>
+        <button class="sp" data-sp="妈妈" onclick="setSpeaker('妈妈')">妈妈</button>
+        <button class="sp" data-sp="爸爸" onclick="setSpeaker('爸爸')">爸爸</button>
+      </div>
+      <canvas class="wave" id="wave"></canvas>
+      <button class="btn-rec idle" id="recBtn" onclick="toggleRecord()">
+        <span class="ring"></span>
+      </button>
+      <div class="hint" id="recHint">点击开始录音</div>
+
+      <div class="live" id="live"><span class="placeholder">录音时的文字会实时显示在这里…</span></div>
+
+      <details class="sync-box" id="syncBox">
+        <summary>☁️ 百度网盘同步设置</summary>
+        <div class="sync-inner">
+          <p class="sync-tip">在 <b>百度网盘开放平台</b> 创建应用，填入 API Key / Secret Key，点「前往授权」登录百度账号授权一次。录音与文字会自动上传到网盘 <code>/apps/应用名/随记/</code>。凭据仅存你本机。</p>
+          <input class="field" id="akInput" placeholder="API Key (AK)" oninput="localStorage.setItem('bd_ak',this.value.trim())" />
+          <input class="field" id="skInput" placeholder="Secret Key (SK)" oninput="localStorage.setItem('bd_sk',this.value.trim())" />
+          <input class="field" id="appNameInput" placeholder="应用目录名（百度网盘应用的名称）" oninput="localStorage.setItem('bd_app',this.value.trim())" />
+          <button class="btn ghost" onclick="saveBaiduConfig()" style="margin-bottom:10px">保存配置</button>
+          <div id="baiduStatus" class="sync-tip">未连接</div>
+          <button class="btn" onclick="baiduAuth()" id="authBtn">前往授权</button>
+          <label class="sync-toggle" style="margin-top:12px"><input type="checkbox" id="syncOn" onchange="localStorage.setItem('bd_sync',this.checked?'1':'')" /> 保存时自动同步到百度网盘</label>
+        </div>
+      </details>
+
+      <div class="save-box" id="saveBox">
+        <input class="field" id="titleInput" placeholder="给这条记录起个名字（可留空，自动用时间命名）" />
+        <div class="loc-note" id="locNote"></div>
+        <div class="row">
+          <button class="btn ghost" onclick="discardRecording()">丢弃</button>
+          <button class="btn" onclick="saveRecording()">保存记录</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 列表页 -->
+  <section id="listView" style="display:none;">
+    <div class="list-bar">
+      <span class="list-title">我的记录</span>
+      <button class="export-btn" onclick="exportSummary()">导出纪要</button>
+    </div>
+    <input class="search" id="searchBox" placeholder="搜索标题或文字内容…" oninput="renderList()" />
+    <div class="sp-filter" id="spFilter">
+      <button class="sf active" data-f="" onclick="setFilter('')">全部</button>
+      <button class="sf" data-f="花生" onclick="setFilter('花生')">花生</button>
+      <button class="sf" data-f="西梅" onclick="setFilter('西梅')">西梅</button>
+      <button class="sf" data-f="妈妈" onclick="setFilter('妈妈')">妈妈</button>
+      <button class="sf" data-f="爸爸" onclick="setFilter('爸爸')">爸爸</button>
+    </div>
+    <div class="sp-filter" id="locFilter"></div>
+    <div id="listContainer"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- 工具 ---------- */
+const $ = (id) => document.getElementById(id);
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1800); }
+function fmtTime(sec){ const m=Math.floor(sec/60), s=Math.floor(sec%60); return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }
+function fmtDate(ts){ const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+/* ---------- 数据库 (IndexedDB) ---------- */
+const DB_NAME='voice-notes', STORE='records';
+let db;
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB_NAME,1);
+    r.onupgradeneeded=e=>{ const db=e.target.result; if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE,{keyPath:'id'}); };
+    r.onsuccess=e=>{ db=e.target.result; res(db); };
+    r.onerror=e=>rej(e.target.error);
+  });
+}
+function dbPut(rec){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(rec); tx.oncomplete=res; tx.onerror=e=>rej(e.target.error); }); }
+function dbAll(){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readonly'); const req=tx.objectStore(STORE).getAll(); req.onsuccess=()=>res(req.result.sort((a,b)=>b.createdAt-a.createdAt)); req.onerror=e=>rej(e.target.error); }); }
+function dbDel(id){ return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(id); tx.oncomplete=res; tx.onerror=e=>rej(e.target.error); }); }
+
+/* ---------- 说话人选择 ---------- */
+let currentSpeaker='';
+function setSpeaker(sp){
+  currentSpeaker = (currentSpeaker===sp) ? '' : sp;
+  document.querySelectorAll('#speakers .sp').forEach(b=>b.classList.toggle('active', b.dataset.sp===currentSpeaker));
+}
+
+/* ---------- 列表筛选 ---------- */
+let currentFilter='';
+function setFilter(f){
+  currentFilter = f;
+  document.querySelectorAll('#spFilter .sf').forEach(b=>b.classList.toggle('active', b.dataset.f===currentFilter));
+  renderList();
+}
+
+/* 地点筛选（根据已有记录动态生成） */
+let currentLocFilter='';
+function setLocFilter(f){
+  currentLocFilter = f;
+  renderList();
+}
+function renderLocFilter(all){
+  const names = [...new Set(all.map(r=>r.location&&r.location.name).filter(Boolean))];
+  const hasNone = all.some(r=>!r.location);
+  let html = `<button class="sf ${currentLocFilter===''?'active':''}" onclick="setLocFilter('')">全部地点</button>`;
+  if(hasNone) html += `<button class="sf ${currentLocFilter==='__none__'?'active':''}" onclick="setLocFilter('__none__')">未记录</button>`;
+  names.forEach(n=>{ html += `<button class="sf ${currentLocFilter===n?'active':''}" onclick="setLocFilter(${JSON.stringify(n)})">${escapeHtml(n)}</button>`; });
+  $('locFilter').innerHTML = html;
+}
+
+/* ---------- 标签页切换 ---------- */
+function switchTab(tab){
+  $('tabRec').classList.toggle('active', tab==='rec');
+  $('tabList').classList.toggle('active', tab==='list');
+  $('recView').style.display = tab==='rec' ? '' : 'none';
+  $('listView').style.display = tab==='list' ? '' : 'none';
+  if(tab==='list') renderList();
+}
+
+/* ---------- 录音核心 ---------- */
+let mediaRecorder, micStream, audioCtx, analyser, rafId, chunks=[];
+let recStart=0, timerId=null, recording=false;
+let recognition=null, finalText='', interimText='';
+let pendingLocation=null;
+
+/* 自动获取位置（经纬度 + 尽力反查中文地名） */
+function getLocation(){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const lat=pos.coords.latitude, lng=pos.coords.longitude;
+      let name='';
+      try{
+        const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),6000);
+        const r=await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=zh`,{signal:ctrl.signal});
+        clearTimeout(t); const j=await r.json();
+        name=[j.locality||j.city, j.principalSubdivision].filter(Boolean).join(' · ');
+        if(!name) name=`${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+      }catch(_){ name=`${lat.toFixed(3)}, ${lng.toFixed(3)}`; }
+      resolve({lat,lng,name});
+    }, ()=>{ resolve(null); }, {enableHighAccuracy:false, timeout:8000, maximumAge:60000});
+  });
+}
+
+const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+function setupRecognition(){
+  if(!hasSpeech) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.onresult = (e)=>{
+    interimText='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText += t;
+      else interimText += t;
+    }
+    renderLive();
+  };
+  recognition.onerror = (e)=>{ if(e.error==='not-allowed') toast('语音识别被拒绝'); };
+  recognition.onend = ()=>{ if(recording && recognition) { try{ recognition.start(); }catch(_){} } };
+}
+
+function renderLive(){
+  const live=$('live');
+  if(!finalText && !interimText){ live.innerHTML='<span class="placeholder">录音时的文字会实时显示在这里…</span>'; return; }
+  live.innerHTML = escapeHtml(finalText) + '<span class="interim">'+escapeHtml(interimText)+'</span>';
+}
+function escapeHtml(s){ return s.replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function drawWave(){
+  const cv=$('wave'); const ctx=cv.getContext('2d');
+  const w=cv.width=cv.clientWidth*2, h=cv.height=cv.clientHeight*2;
+  ctx.clearRect(0,0,w,h);
+  if(!analyser){ requestAnimationFrame(drawWave); return; }
+  const data=new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  const bars=48, step=Math.floor(data.length/bars), bw=w/bars;
+  for(let i=0;i<bars;i++){
+    const v=data[i*step]/255; const bh=Math.max(4, v*h*0.9);
+    ctx.fillStyle='#5b6cff';
+    const x=i*bw+bw*0.2; const y=(h-bh)/2;
+    ctx.fillRect(x,y,bw*0.6,bh);
+  }
+  rafId=requestAnimationFrame(drawWave);
+}
+
+async function startRecord(){
+  try{
+    micStream = await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(err){ toast('无法访问麦克风，请检查权限'); return; }
+
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const src = audioCtx.createMediaStreamSource(micStream);
+  analyser = audioCtx.createAnalyser(); analyser.fftSize=256;
+  src.connect(analyser);
+  drawWave();
+
+  chunks=[];
+  const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+  mediaRecorder = new MediaRecorder(micStream, mime?{mimeType:mime}:undefined);
+  mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) chunks.push(e.data); };
+  mediaRecorder.start();
+
+  finalText=''; interimText=''; renderLive();
+  setupRecognition();
+  if(recognition){ try{ recognition.start(); }catch(_){} }
+
+  recording=true; recStart=Date.now();
+  $('recBtn').classList.remove('idle'); $('recBtn').querySelector('.ring').classList.add('round');
+  $('recHint').textContent='正在录音，点击停止';
+  $('status').textContent='录音中…';
+  $('saveBox').classList.remove('show');
+  $('locNote').textContent='';
+  pendingLocation=getLocation();
+  pendingLocation.then(loc=>{ if($('locNote')) $('locNote').textContent = loc ? ('📍 '+loc.name) : '📍 未获取到位置（可在浏览器允许定位后重试）'; });
+  timerId=setInterval(()=>{ $('timer').textContent=fmtTime((Date.now()-recStart)/1000); },200);
+}
+
+function stopRecord(){
+  recording=false;
+  clearInterval(timerId);
+  if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
+  if(recognition){ try{ recognition.stop(); }catch(_){} }
+  if(micStream) micStream.getTracks().forEach(t=>t.stop());
+  if(audioCtx) audioCtx.close();
+  cancelAnimationFrame(rafId); analyser=null;
+
+  $('recBtn').classList.add('idle'); $('recBtn').querySelector('.ring').classList.remove('round');
+  $('recHint').textContent='点击开始录音';
+  $('status').textContent='已停止，可保存';
+  pendingBlob = new Blob(chunks, {type: mediaRecorder?mediaRecorder.mimeType:'audio/webm'});
+  pendingDuration = (Date.now()-recStart)/1000;
+  $('titleInput').value = fmtDate(recStart);
+  $('saveBox').classList.add('show');
+}
+
+let pendingBlob=null, pendingDuration=0;
+function toggleRecord(){ recording ? stopRecord() : startRecord(); }
+
+async function saveRecording(){
+  if(!pendingBlob){ toast('没有可保存的录音'); return; }
+  const loc = await pendingLocation;
+  const rec = {
+    id: Date.now(),
+    title: $('titleInput').value.trim() || fmtDate(recStart),
+    createdAt: recStart,
+    duration: pendingDuration,
+    mime: pendingBlob.type,
+    transcript: finalText.trim(),
+    speaker: currentSpeaker,
+    location: loc,
+    blob: pendingBlob
+  };
+  await dbPut(rec);
+  if($('syncOn').checked){
+    toast('正在同步到百度网盘…');
+    try{
+      const r = await syncToBaidu(rec);
+      if(r.ok) toast('已同步到百度网盘 ✓');
+      else if(!r.skipped) toast('同步失败：'+(r.error||'未知错误'));
+    }catch(e){ toast('同步出错：'+e.message); }
+  }
+  pendingBlob=null; pendingLocation=null; $('saveBox').classList.remove('show');
+  $('timer').textContent='00:00'; $('status').textContent='已保存 ✓';
+  $('live').innerHTML='<span class="placeholder">录音时的文字会实时显示在这里…</span>';
+  $('locNote').textContent='';
+  currentSpeaker=''; document.querySelectorAll('#speakers .sp').forEach(b=>b.classList.remove('active'));
+  updateCount();
+  toast('已保存到「我的记录」');
+  switchTab('list');
+}
+
+/* ---------- 百度网盘同步 ---------- */
+function blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); }); }
+function fmtFileTs(ts){ const d=new Date(ts||Date.now()); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`; }
+
+async function syncToBaidu(rec){
+  if(!$('syncOn').checked) return {skipped:true};
+  const safe=(rec.title||'record').replace(/[\\/:*?"<>|]/g,'_');
+  const audioName=`${safe}_${fmtFileTs(rec.createdAt)}.webm`;
+  const audioData=await blobToDataURL(rec.blob);
+  const meta={
+    title: rec.title,
+    createdAt: rec.createdAt,
+    duration: rec.duration,
+    speaker: rec.speaker,
+    locationName: rec.location ? rec.location.name : '',
+    transcript: rec.transcript
+  };
+  const resp=await fetch('/api/save',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({meta, audio:{name:audioName, data:audioData}})});
+  return await resp.json();
+}
+
+async function refreshBaiduStatus(){
+  try{
+    const r=await (await fetch('/api/baidu/status')).json();
+    const el=$('baiduStatus');
+    if(!r.configured){ el.textContent='未配置：请填写 AK / SK 并保存'; el.style.color='var(--muted)'; }
+    else if(r.authorized){ const d=r.expires_at?new Date(r.expires_at).toLocaleString('zh-CN'):''; el.textContent='已连接 ✓'+(d?(' 到期：'+d):''); el.style.color='var(--ok)'; }
+    else { el.textContent='已配置（'+r.akMasked+'），未授权 → 点「前往授权」'; el.style.color='#e0902b'; }
+  }catch(_){ /* 后端不可达时静默 */ }
+}
+async function saveBaiduConfig(){
+  const ak=$('akInput').value.trim(), sk=$('skInput').value.trim(), app=$('appNameInput').value.trim();
+  if(!ak || !sk){ toast('请填写 AK 和 SK'); return; }
+  localStorage.setItem('bd_ak',ak); localStorage.setItem('bd_sk',sk); localStorage.setItem('bd_app',app);
+  localStorage.setItem('bd_sync', $('syncOn').checked?'1':'');
+  try{
+    const r=await (await fetch('/api/baidu/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ak,sk,appName:app})})).json();
+    if(r.ok){ toast('配置已保存'); refreshBaiduStatus(); }
+    else toast('保存失败：'+(r.error||''));
+  }catch(e){ toast('保存出错：'+e.message); }
+}
+async function baiduAuth(){
+  try{
+    const r=await (await fetch('/api/baidu/auth-url')).json();
+    if(!r.ok){ toast(r.error||'无法生成授权链接'); return; }
+    const w=window.open(r.url,'_blank','width=540,height=680');
+    if(!w) toast('浏览器拦截了授权窗口，请允许弹窗后重试');
+    let n=0;
+    const iv=setInterval(async ()=>{
+      n++;
+      if(n>40){ clearInterval(iv); return; }
+      try{
+        const st=await (await fetch('/api/baidu/status')).json();
+        if(st.authorized){ clearInterval(iv); if(w && !w.closed) w.close(); toast('百度网盘已连接 ✓'); refreshBaiduStatus(); }
+      }catch(_){}
+    },1500);
+  }catch(e){ toast('授权出错：'+e.message); }
+}
+function loadSyncSettings(){
+  $('akInput').value=localStorage.getItem('bd_ak')||'';
+  $('skInput').value=localStorage.getItem('bd_sk')||'';
+  $('appNameInput').value=localStorage.getItem('bd_app')||'';
+  $('syncOn').checked=localStorage.getItem('bd_sync')==='1';
+  refreshBaiduStatus();
+}
+
+function discardRecording(){
+  pendingBlob=null; pendingLocation=null; $('saveBox').classList.remove('show');
+  $('timer').textContent='00:00'; $('status').textContent='已丢弃';
+  $('live').innerHTML='<span class="placeholder">录音时的文字会实时显示在这里…</span>';
+  $('locNote').textContent='';
+  currentSpeaker=''; document.querySelectorAll('#speakers .sp').forEach(b=>b.classList.remove('active'));
+}
+
+/* ---------- 列表 ---------- */
+function updateCount(){ dbAll().then(list=>$('savedCount').textContent=list.length+' 条记录'); }
+
+async function renderList(){
+  const all = await dbAll();
+  renderLocFilter(all);
+  const kw = $('searchBox').value.trim().toLowerCase();
+  let list = all.filter(r=>(r.title||'').toLowerCase().includes(kw) || (r.transcript||'').toLowerCase().includes(kw));
+  if(currentFilter) list = list.filter(r=>(r.speaker||'')===currentFilter);
+  if(currentLocFilter==='__none__') list = list.filter(r=>!r.location);
+  else if(currentLocFilter) list = list.filter(r=>(r.location&&r.location.name)===currentLocFilter);
+  const box=$('listContainer');
+  if(list.length===0){ box.innerHTML='<div class="empty">'+(all.length===0?'还没有记录，去「录音」页录一条吧':'没有匹配的记录')+'</div>'; return; }
+  box.innerHTML = list.map(r=>{
+    const url = URL.createObjectURL(r.blob);
+    const badge = r.speaker ? `<span class="badge">${escapeHtml(r.speaker)}</span>` : '';
+    return `<div class="item" data-id="${r.id}">
+      <div class="top">
+        <div><div class="title">${escapeHtml(r.title)}${badge}</div><div class="meta">${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}${r.location?(' · 📍 '+escapeHtml(r.location.name)):''}</div></div>
+      </div>
+      <audio controls src="${url}"></audio>
+      <div class="text">${r.transcript?escapeHtml(r.transcript):'<span style="color:#8a90a2">（无文字记录）</span>'}</div>
+      <div class="actions">
+        <button onclick="copyText(${r.id})">复制文字</button>
+        <button onclick="downloadAudio(${r.id})">下载音频</button>
+        <button class="danger" onclick="delRec(${r.id})">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function copyText(id){
+  const all=await dbAll(); const r=all.find(x=>x.id===id);
+  if(r && r.transcript){ navigator.clipboard.writeText(r.transcript); toast('文字已复制'); }
+  else toast('这条没有文字');
+}
+async function downloadAudio(id){
+  const all=await dbAll(); const r=all.find(x=>x.id===id);
+  if(!r) return;
+  const url=URL.createObjectURL(r.blob); const a=document.createElement('a');
+  a.href=url; a.download=(r.title||'record')+'.webm'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function delRec(id){
+  if(!confirm('确定删除这条记录？')) return;
+  await dbDel(id); updateCount(); renderList(); toast('已删除');
+}
+
+/* 导出当前筛选结果为可打印纪要页 */
+function exportSummary(){
+  dbAll().then(all=>{
+    const kw=$('searchBox').value.trim().toLowerCase();
+    let list=all.filter(r=>(r.title||'').toLowerCase().includes(kw)||(r.transcript||'').toLowerCase().includes(kw));
+    if(currentFilter) list=list.filter(r=>(r.speaker||'')===currentFilter);
+    if(currentLocFilter==='__none__') list=list.filter(r=>!r.location);
+    else if(currentLocFilter) list=list.filter(r=>(r.location&&r.location.name)===currentLocFilter);
+
+    const body = list.map(r=>{
+      const sp = r.speaker?`<span class="sp">${escapeHtml(r.speaker)}</span>`:'';
+      const loc = r.location?`<span class="loc">📍 ${escapeHtml(r.location.name)}</span>`:'';
+      const txt = r.transcript?escapeHtml(r.transcript).replace(/\n/g,'<br>'):'<i>（无文字记录）</i>';
+      return `<div class="rec"><div class="h"><b>${escapeHtml(r.title)}</b> ${sp} ${loc}<span class="t">${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}</span></div><div class="c">${txt}</div></div>`;
+    }).join('') || '<p class="empty">没有符合条件的记录</p>';
+
+    const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>录音纪要</title>`+
+      `<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;max-width:820px;margin:32px auto;padding:0 22px;color:#1f2430}`+
+      `.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;border-bottom:2px solid #eef0ff;padding-bottom:14px}`+
+      `.top h2{margin:0;font-size:20px}.btn{background:#5b6cff;color:#fff;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;font-size:14px}`+
+      `.rec{border:1px solid #e9ebf2;border-radius:12px;padding:14px 16px;margin-bottom:14px}`+
+      `.h{margin-bottom:8px;line-height:1.6}.h .sp{background:#eef0ff;color:#5b6cff;border-radius:999px;padding:2px 9px;font-size:12px;margin-right:6px}`+
+      `.h .loc{color:#8a90a2;font-size:13px;margin-right:8px}.h .t{color:#8a90a2;font-size:12px;float:right}.c{line-height:1.8;white-space:pre-wrap;word-break:break-word}`+
+      `@media print{.btn{display:none}body{margin:0}}</style></head><body>`+
+      `<div class="top"><h2>录音纪要（共 ${list.length} 条）</h2><button class="btn" onclick="window.print()">打印 / 另存为PDF</button></div>`+
+      body+`</body></html>`;
+
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const w=window.open(url,'_blank');
+    if(!w) toast('浏览器拦截了新窗口，请允许弹窗后重试');
+  });
+}
+
+/* ---------- 启动 ---------- */
+openDB().then(()=>{ updateCount(); loadSyncSettings(); if(!hasSpeech) toast('当前浏览器不支持实时转写，仍可录音'); });
+</script>
+</body>
+</html>

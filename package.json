@@ -1,0 +1,13 @@
+{
+  "name": "suiji-recorder",
+  "version": "1.0.0",
+  "description": "随记：手机录音转文字 + 百度网盘自动同步（零依赖 Node 后端）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}
