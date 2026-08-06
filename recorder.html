@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>随记 · 录音转文字</title>
+<title>惊天语录 · 录音转文字</title>
 <style>
   :root {
     --bg: #f5f6fb;
@@ -57,7 +57,7 @@
   .timer { font-size: 44px; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
   .status { color: var(--muted); font-size: 14px; margin-top: 4px; min-height: 20px; }
 
-  .wave { width: 100%; height: 90px; margin: 18px 0; border-radius: 14px; background: var(--brand-soft); display: block; }
+  .wave { width: 100%; max-width: 340px; height: 60px; margin: 18px auto; border-radius: 14px; background: var(--brand-soft); display: block; }
 
   .btn-rec {
     width: 96px; height: 96px; border-radius: 50%; border: none; margin: 6px auto 4px;
@@ -66,14 +66,22 @@
   }
   .btn-rec:active { transform: scale(.95); }
   .btn-rec.idle { background: var(--brand); box-shadow: 0 10px 26px rgba(91,108,255,.35); }
-  .btn-rec .ring { width: 34px; height: 34px; border-radius: 8px; background: #fff; }
-  .btn-rec .ring.round { border-radius: 50%; width: 30px; height: 30px; }
+  .btn-rec .ring {
+    width: 0; height: 0; border-style: solid;
+    border-width: 19px 0 19px 32px;
+    border-color: transparent transparent transparent #fff;
+    background: transparent; margin-left: 6px;
+  }
+  .btn-rec .ring.round {
+    width: 30px; height: 30px; border: 0; border-radius: 7px;
+    background: #fff; margin-left: 0;
+  }
 
   .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
-  .speakers { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 4px; }
-  .sp-label { font-size: 13px; color: var(--muted); margin-right: 2px; }
-  .sp { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 15px; font-size: 14px; color: var(--ink); cursor: pointer; transition: .15s; }
+  .speakers { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; justify-content: center; margin-bottom: 4px; }
+  .sp-label { display: none; }
+  .sp { flex: 1 1 0; min-width: 0; text-align: center; border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 12px 4px; font-size: 16px; font-weight: 600; color: var(--ink); cursor: pointer; transition: .15s; }
   .sp.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 
   .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 2px 9px; margin-left: 7px; vertical-align: middle; }
@@ -86,7 +94,7 @@
   .export-btn { border: 1px solid var(--brand); color: var(--brand); background: #fff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
 
   .live {
-    margin-top: 18px; text-align: left; background: var(--bg); border-radius: 14px; padding: 14px;
+    width: 100%; max-width: 340px; margin: 18px auto 0; text-align: left; background: var(--bg); border-radius: 14px; padding: 14px;
     min-height: 70px; font-size: 15px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; word-break: break-word;
   }
   .live .interim { color: var(--muted); }
@@ -136,7 +144,7 @@
 <body>
 <div class="app">
   <header>
-    <div class="logo"><span class="dot">🎙️</span> 随记</div>
+    <div class="logo"><span class="dot">🎙️</span> 惊天语录</div>
     <div class="saved-count" id="savedCount">0 条记录</div>
   </header>
 
@@ -154,39 +162,37 @@
         <span class="sp-label">说话人</span>
         <button class="sp" data-sp="花生" onclick="setSpeaker('花生')">花生</button>
         <button class="sp" data-sp="西梅" onclick="setSpeaker('西梅')">西梅</button>
-        <button class="sp" data-sp="妈妈" onclick="setSpeaker('妈妈')">妈妈</button>
-        <button class="sp" data-sp="爸爸" onclick="setSpeaker('爸爸')">爸爸</button>
       </div>
       <canvas class="wave" id="wave"></canvas>
+      <div class="live" id="live"><span class="placeholder">录音时的文字会实时显示在这里…</span></div>
+
       <button class="btn-rec idle" id="recBtn" onclick="toggleRecord()">
         <span class="ring"></span>
       </button>
       <div class="hint" id="recHint">点击开始录音</div>
-
-      <div class="live" id="live"><span class="placeholder">录音时的文字会实时显示在这里…</span></div>
-
-      <details class="sync-box" id="syncBox">
-        <summary>☁️ 百度网盘同步设置</summary>
-        <div class="sync-inner">
-          <p class="sync-tip">在 <b>百度网盘开放平台</b> 创建应用，填入 API Key / Secret Key，点「前往授权」登录百度账号授权一次。录音与文字会自动上传到网盘 <code>/apps/应用名/随记/</code>。凭据仅存你本机。</p>
-          <input class="field" id="akInput" placeholder="API Key (AK)" oninput="localStorage.setItem('bd_ak',this.value.trim())" />
-          <input class="field" id="skInput" placeholder="Secret Key (SK)" oninput="localStorage.setItem('bd_sk',this.value.trim())" />
-          <input class="field" id="appNameInput" placeholder="应用目录名（百度网盘应用的名称）" oninput="localStorage.setItem('bd_app',this.value.trim())" />
-          <button class="btn ghost" onclick="saveBaiduConfig()" style="margin-bottom:10px">保存配置</button>
-          <div id="baiduStatus" class="sync-tip">未连接</div>
-          <button class="btn" onclick="baiduAuth()" id="authBtn">前往授权</button>
-          <label class="sync-toggle" style="margin-top:12px"><input type="checkbox" id="syncOn" onchange="localStorage.setItem('bd_sync',this.checked?'1':'')" /> 保存时自动同步到百度网盘</label>
-        </div>
-      </details>
 
       <div class="save-box" id="saveBox">
         <input class="field" id="titleInput" placeholder="给这条记录起个名字（可留空，自动用时间命名）" />
         <div class="loc-note" id="locNote"></div>
         <div class="row">
           <button class="btn ghost" onclick="discardRecording()">丢弃</button>
-          <button class="btn" onclick="saveRecording()">保存记录</button>
+          <button class="btn" onclick="saveRecording()">保存</button>
         </div>
       </div>
+
+      <details class="sync-box" id="syncBox">
+        <summary>☁️ 百度网盘同步设置</summary>
+        <div class="sync-inner">
+          <p class="sync-tip">这是一台共享记录本：任何人打开本页录的音，都会自动汇总到同一个百度网盘（<code>/apps/应用名/惊天语录/</code>），无需各自登录。<b>只需你（管理员）在这里授权一次并保存配置即可，其他人打开链接直接录。</b>凭据仅存服务器，不会下发给访客。</p>
+          <input class="field" id="akInput" placeholder="API Key (AK)" oninput="localStorage.setItem('bd_ak',this.value.trim())" />
+          <input class="field" id="skInput" placeholder="Secret Key (SK)" oninput="localStorage.setItem('bd_sk',this.value.trim())" />
+          <input class="field" id="appNameInput" placeholder="应用目录名（百度网盘应用的名称）" oninput="localStorage.setItem('bd_app',this.value.trim())" />
+          <button class="btn ghost" onclick="saveBaiduConfig()" style="margin-bottom:10px">保存配置</button>
+          <div id="baiduStatus" class="sync-tip">未连接</div>
+          <button class="btn" onclick="baiduAuth()" id="authBtn">前往授权</button>
+          <label class="sync-toggle" style="margin-top:12px"><input type="checkbox" id="syncOn" onchange="localStorage.setItem('bd_sync',this.checked?'1':'0')" /> 保存时自动同步到共享网盘（全家共用）</label>
+        </div>
+      </details>
     </div>
   </section>
 
@@ -201,8 +207,6 @@
       <button class="sf active" data-f="" onclick="setFilter('')">全部</button>
       <button class="sf" data-f="花生" onclick="setFilter('花生')">花生</button>
       <button class="sf" data-f="西梅" onclick="setFilter('西梅')">西梅</button>
-      <button class="sf" data-f="妈妈" onclick="setFilter('妈妈')">妈妈</button>
-      <button class="sf" data-f="爸爸" onclick="setFilter('爸爸')">爸爸</button>
     </div>
     <div class="sp-filter" id="locFilter"></div>
     <div id="listContainer"></div>
@@ -210,6 +214,31 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- 访问口令遮罩（软门槛：输一次缓存30天，非登录） -->
+<div class="gate" id="gate" style="display:none;">
+  <div class="gate-card">
+    <div class="gate-logo">🎙️ 惊天语录</div>
+    <div class="gate-title">这是一个共享记录本</div>
+    <div class="gate-sub" id="gateSub">请输入访问口令，30 天内免重复输入</div>
+    <input class="gate-input" id="gateInput" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="访问口令" autocomplete="off" />
+    <button class="gate-btn" id="gateBtn" onclick="gateSubmit()">进入</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<style>
+  .gate { position: fixed; inset: 0; background: rgba(28,30,42,.55); backdrop-filter: blur(4px); display: grid; place-items: center; z-index: 100; padding: 20px; }
+  .gate-card { background: #fff; border-radius: 20px; box-shadow: 0 18px 50px rgba(30,35,70,.25); width: 100%; max-width: 340px; padding: 30px 26px; text-align: center; }
+  .gate-logo { font-size: 15px; font-weight: 700; color: var(--brand); }
+  .gate-title { font-size: 20px; font-weight: 700; margin: 14px 0 6px; color: var(--ink); }
+  .gate-sub { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 18px; }
+  .gate-input { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; font-size: 16px; text-align: center; background: #fff; color: var(--ink); margin-bottom: 12px; }
+  .gate-input:focus { outline: none; border-color: var(--brand); }
+  .gate-btn { width: 100%; border: 0; border-radius: 12px; padding: 13px; font-size: 16px; font-weight: 700; background: var(--brand); color: #fff; cursor: pointer; }
+  .gate-btn:active { transform: scale(.98); }
+  .gate-err { color: var(--rec); font-size: 13px; margin-top: 12px; min-height: 18px; }
+</style>
 
 <script>
 /* ---------- 工具 ---------- */
@@ -446,7 +475,8 @@ async function syncToBaidu(rec){
     locationName: rec.location ? rec.location.name : '',
     transcript: rec.transcript
   };
-  const resp=await fetch('/api/save',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({meta, audio:{name:audioName, data:audioData}})});
+  const resp=await fetch('/api/save',{method:'POST',headers:{'content-type':'application/json', 'x-gate-token': gateToken || ''},body:JSON.stringify({meta, audio:{name:audioName, data:audioData}})});
+  if(resp.status===401){ const j=await resp.json().catch(()=>({})); if(j.error==='ACCESS_DENIED'){ onAccessDenied(); throw new Error('访问口令已过期，请重新输入'); } }
   return await resp.json();
 }
 
@@ -491,7 +521,7 @@ function loadSyncSettings(){
   $('akInput').value=localStorage.getItem('bd_ak')||'';
   $('skInput').value=localStorage.getItem('bd_sk')||'';
   $('appNameInput').value=localStorage.getItem('bd_app')||'';
-  $('syncOn').checked=localStorage.getItem('bd_sync')==='1';
+  $('syncOn').checked=localStorage.getItem('bd_sync')!=='0';
   refreshBaiduStatus();
 }
 
@@ -585,8 +615,45 @@ function exportSummary(){
   });
 }
 
+/* ---------- 访问口令（软门槛） ---------- */
+const GATE_KEY='jt_gate_token';
+let gateToken = localStorage.getItem(GATE_KEY) || '';
+async function initGate(){
+  try{
+    const st = await (await fetch('/api/gate/status')).json();
+    if(!st.enabled) return; // 未开启口令，直接进入
+    if(gateToken) return;   // 本地有缓存令牌则先放行；若已失效，保存时 /api/save 返回 401 会重新弹窗
+  }catch(_){}
+  showGate(); // 未开启口令或没有任何缓存 → 必须输入
+}
+function showGate(){
+  const g=$('gate'); g.style.display='grid';
+  $('gateErr').textContent='';
+  setTimeout(()=>$('gateInput').focus(),50);
+}
+function hideGate(){ $('gate').style.display='none'; }
+async function gateSubmit(){
+  const pass=$('gateInput').value;
+  if(!pass){ $('gateErr').textContent='请输入口令'; return; }
+  $('gateBtn').disabled=true; $('gateBtn').textContent='校验中…';
+  try{
+    const r=await (await fetch('/api/gate/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pass})})).json();
+    if(r.ok){ gateToken=r.token; localStorage.setItem(GATE_KEY, gateToken); hideGate(); toast('验证成功'); }
+    else { $('gateErr').textContent=r.error||'口令不正确'; }
+  }catch(e){ $('gateErr').textContent='校验出错：'+e.message; }
+  finally{ $('gateBtn').disabled=false; $('gateBtn').textContent='进入'; }
+}
+// 回车提交
+document.addEventListener('keydown',(e)=>{ if(e.key==='Enter' && $('gate').style.display!=='none'){ gateSubmit(); } });
+// 若保存接口返回未授权，弹出口令
+function onAccessDenied(){
+  gateToken=''; localStorage.removeItem(GATE_KEY); showGate();
+  $('gateSub').textContent='上次验证已过期或无效，请重新输入口令（30 天内免重复）';
+}
+
 /* ---------- 启动 ---------- */
 openDB().then(()=>{ updateCount(); loadSyncSettings(); if(!hasSpeech) toast('当前浏览器不支持实时转写，仍可录音'); });
+initGate();
 </script>
 </body>
 </html>

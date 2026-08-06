@@ -1,16 +1,20 @@
 /*
- * 随记 · 百度网盘同步后端（零依赖，仅需 Node 18+）
+ * 惊天语录 · 百度网盘同步后端（零依赖，仅需 Node 18+）
  * 功能：
  *   1) 托管 recorder.html（同一端口，麦克风在 localhost 下可用）
  *   2) 百度网盘开放平台 OAuth2 授权码流程（换取 access_token + refresh_token）
  *   3) 通过 XPan API 三步法（precreate -> upload -> create）上传音频 + markdown 纪要
- *      到 /apps/<应用名>/随记/ 目录
+ *      到 /apps/<应用名>/惊天语录/ 目录
  *
  * 运行： node server.js        （默认端口 8000）
  * 可选环境变量：
  *   PORT        监听端口，默认 8000
  *   PUBLIC_URL  若用 https 隧道/自有域名访问，请设为对外可达的基地址，例如
  *               https://xxx.example.com  （用于拼接 OAuth 回调地址，必须与百度后台登记一致）
+ *   ACCESS_PASS 若设置，则所有访客需先输入此口令才能进入 / 保存（软门槛，非登录）。
+ *               验证通过后下发有效期 30 天的令牌缓存在访客本机，过期才需重输。
+ *               留空则任何人可免验证使用。
+ *   GATE_SECRET 访问令牌签名密钥；不设则默认由 ACCESS_PASS 派生（重启仍有效）。
  *
  * 凭据与令牌保存在同目录的 baidu_token.json，仅存于你本机，请勿外传。
  */
@@ -34,6 +38,29 @@ if (process.env.BAIDU_SK) tokens.sk = process.env.BAIDU_SK;
 if (process.env.BAIDU_APP) tokens.appName = process.env.BAIDU_APP;
 if (process.env.BAIDU_REFRESH_TOKEN) tokens.refresh_token = process.env.BAIDU_REFRESH_TOKEN;
 const oauthStates = new Map(); // state -> { ts, redirect }
+
+/* ---------------- 访问口令（软门槛，非登录） ---------------- */
+// 设置环境变量 ACCESS_PASS 即开启访问口令；留空则任何人可免验证使用。
+// 口令验证通过后下发一个有效期 30 天的签名令牌，前端缓存，过期才需重输。
+const ACCESS_PASS = (process.env.ACCESS_PASS || '').trim();
+// GATE_SECRET 默认由口令派生，重启后令牌仍有效；如需更稳可显式设置环境变量 GATE_SECRET。
+const GATE_SECRET = process.env.GATE_SECRET || (ACCESS_PASS ? crypto.createHash('sha256').update('gate:' + ACCESS_PASS).digest('hex') : '');
+const GATE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 天
+
+function signGate(exp) {
+  const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
+  const sig = crypto.createHmac('sha256', GATE_SECRET).update(payload).digest('base64url');
+  return payload + '.' + sig;
+}
+function verifyGate(token) {
+  if (!token || !GATE_SECRET) return false;
+  const [payload, sig] = String(token).split('.');
+  if (!payload || !sig) return false;
+  const expected = crypto.createHmac('sha256', GATE_SECRET).update(payload).digest('base64url');
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  try { const obj = JSON.parse(Buffer.from(payload, 'base64url').toString()); return obj.exp > Date.now(); }
+  catch { return false; }
+}
 
 /* ---------------- 持久化 ---------------- */
 function loadTokens() {
@@ -130,6 +157,26 @@ async function baiduPost(method, params) {
 }
 async function md5Hex(buf) { return crypto.createHash('md5').update(buf).digest('hex'); }
 
+/* 确保远程目录存在（递归创建） */
+async function ensureDir(remoteDir) {
+  // 百度 XPan 的 create 接口：isdir=1 创建目录
+  const parts = remoteDir.split('/').filter(Boolean);
+  let cur = '';
+  for (const part of parts) {
+    cur += '/' + part;
+    try {
+      const r = await baiduPost('create', { path: cur, isdir: '1', size: '0' });
+      if (r.errno !== 0 && r.errno !== -8 && r.errno !== 31029 && r.errno !== undefined) {
+        // -8 = 目录已存在（部分版本），31029 = 已存在，其他错误抛出
+        if (r.errno !== -8 && r.errno !== 31029) throw new Error(`创建目录 ${cur} 失败 errno=${r.errno} ${r.errmsg||''}`);
+      }
+    } catch (e) {
+      // 如果是"已存在"类错误，忽略继续
+      if (!e.message.includes('-8') && !e.message.includes('31029') && !e.message.includes('已存在')) throw e;
+    }
+  }
+}
+
 async function uploadFile(remotePath, buffer) {
   // 1) 分片 + 计算每片 md5
   const parts = [];
@@ -191,7 +238,7 @@ function buildNote(meta) {
   const fmt = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   const mm = Math.floor((meta.duration || 0) / 60), ss = Math.floor((meta.duration || 0) % 60);
   const dur = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-  return `# ${meta.title || '随记'}\n\n` +
+  return `# ${meta.title || '惊天语录'}\n\n` +
     `- 时间：${fmt}\n` +
     `- 说话人：${meta.speaker || '未指定'}\n` +
     `- 地点：${meta.locationName || '未记录'}\n` +
@@ -213,6 +260,20 @@ const server = http.createServer(async (req, res) => {
   try {
     if (p === '/' || p === '/recorder.html') { serveHTML(res); return; }
     if (p === '/healthz') { res.writeHead(200); res.end('ok'); return; }
+
+    // 访问口令：是否开启 + 校验
+    if (p === '/api/gate/status') {
+      return sendJSON(res, 200, { enabled: !!ACCESS_PASS });
+    }
+    if (p === '/api/gate/verify' && req.method === 'POST') {
+      if (!ACCESS_PASS) return sendJSON(res, 200, { ok: true, token: '' });
+      const buf = await readBody(req);
+      let body; try { body = JSON.parse(buf.toString('utf8')); } catch { return sendJSON(res, 400, { ok: false, error: '参数错误' }); }
+      if ((body.pass || '').trim() === ACCESS_PASS) {
+        return sendJSON(res, 200, { ok: true, token: signGate(Date.now() + GATE_TTL) });
+      }
+      return sendJSON(res, 401, { ok: false, error: '口令不正确' });
+    }
 
     // 配置 AK/SK/应用名
     if (p === '/api/baidu/config' && req.method === 'POST') {
@@ -292,6 +353,9 @@ const server = http.createServer(async (req, res) => {
 
     // 保存：上传音频 + markdown 到网盘
     if (p === '/api/save' && req.method === 'POST') {
+      if (ACCESS_PASS && !verifyGate(req.headers['x-gate-token'])) {
+        return sendJSON(res, 401, { ok: false, error: 'ACCESS_DENIED' });
+      }
       const t = await ensureToken();
       if (!t.ok) return sendJSON(res, 401, { ok: false, error: t.error });
       if (!tokens.appName) return sendJSON(res, 400, { ok: false, error: '未配置应用目录名(appName)，请在同步设置中填写' });
@@ -307,10 +371,11 @@ const server = http.createServer(async (req, res) => {
       const base = `${safeName(meta.title)}_${fileTs(meta.createdAt)}`;
       const audioName = base + (audio.name && audio.name.includes('.') ? path.extname(audio.name) : '.webm');
       const noteName = base + '.md';
-      const dir = `/apps/${tokens.appName}/随记`;
+      const dir = `/apps/${tokens.appName}/惊天语录`;
       const audioPath = `${dir}/${audioName}`;
       const notePath = `${dir}/${noteName}`;
       try {
+        await ensureDir(dir);  // 先创建 /apps/<应用名>/惊天语录 目录
         await uploadFile(audioPath, audioBuf);
         await uploadFile(notePath, Buffer.from(buildNote(meta), 'utf8'));
         return sendJSON(res, 200, { ok: true, audioPath, notePath });
@@ -327,6 +392,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const shown = PUBLIC_URL || ('http://localhost:' + PORT);
-  console.log('随记服务已启动：' + shown);
+  console.log('惊天语录服务已启动：' + shown);
   console.log('百度网盘令牌文件：' + TOKEN_FILE);
 });
