@@ -387,6 +387,13 @@ async function startRecord(){
   const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
   mediaRecorder = new MediaRecorder(micStream, mime?{mimeType:mime}:undefined);
   mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) chunks.push(e.data); };
+  // 关键：stop() 后数据异步返回，必须在 onstop 里组装 blob，否则会存成空录音（无法播放/上传）
+  mediaRecorder.onstop = () => {
+    pendingBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+    pendingDuration = (Date.now()-recStart)/1000;
+    $('titleInput').value = fmtDate(recStart);
+    $('saveBox').classList.add('show');
+  };
   mediaRecorder.start();
 
   finalText=''; interimText=''; renderLive();
@@ -407,7 +414,7 @@ async function startRecord(){
 function stopRecord(){
   recording=false;
   clearInterval(timerId);
-  if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop();
+  if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); // onstop 里组装 blob
   if(recognition){ try{ recognition.stop(); }catch(_){} }
   if(micStream) micStream.getTracks().forEach(t=>t.stop());
   if(audioCtx) audioCtx.close();
@@ -416,10 +423,6 @@ function stopRecord(){
   $('recBtn').classList.add('idle'); $('recBtn').querySelector('.ring').classList.remove('round');
   $('recHint').textContent='点击开始录音';
   $('status').textContent='已停止，可保存';
-  pendingBlob = new Blob(chunks, {type: mediaRecorder?mediaRecorder.mimeType:'audio/webm'});
-  pendingDuration = (Date.now()-recStart)/1000;
-  $('titleInput').value = fmtDate(recStart);
-  $('saveBox').classList.add('show');
 }
 
 let pendingBlob=null, pendingDuration=0;
