@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>惊天语录 · 录音转文字</title>
+<title>丛录 · 录音转文字</title>
 <style>
   :root {
     --bg: #f5f6fb;
@@ -149,7 +149,7 @@
 <body>
 <div class="app">
   <header>
-    <div class="logo"><span class="dot">🎙️</span> 惊天语录</div>
+    <div class="logo"><span class="dot">🎙️</span> 丛录</div>
     <div class="saved-count" id="savedCount">0 条记录</div>
   </header>
 
@@ -193,7 +193,7 @@
       <details class="sync-box" id="syncBox">
         <summary>☁️ 百度网盘同步设置</summary>
         <div class="sync-inner">
-          <p class="sync-tip">这是一台共享记录本：任何人打开本页录的音，都会自动汇总到同一个百度网盘（<code>/apps/应用名/惊天语录/</code>），无需各自登录。<b>只需你（管理员）在这里授权一次并保存配置即可，其他人打开链接直接录。</b>凭据仅存服务器，不会下发给访客。</p>
+          <p class="sync-tip">这是一台共享记录本：任何人打开本页录的音，都会自动汇总到同一个百度网盘（<code>/apps/应用名/丛录/</code>），无需各自登录。<b>只需你（管理员）在这里授权一次并保存配置即可，其他人打开链接直接录。</b>凭据仅存服务器，不会下发给访客。</p>
           <input class="field" id="akInput" placeholder="API Key (AK)" oninput="localStorage.setItem('bd_ak',this.value.trim())" />
           <input class="field" id="skInput" placeholder="Secret Key (SK)" oninput="localStorage.setItem('bd_sk',this.value.trim())" />
           <input class="field" id="appNameInput" placeholder="应用目录名（百度网盘应用的名称）" oninput="localStorage.setItem('bd_app',this.value.trim())" />
@@ -231,7 +231,7 @@
 <!-- 访问口令遮罩（软门槛：输一次缓存30天，非登录） -->
 <div class="gate" id="gate" style="display:none;">
   <div class="gate-card">
-    <div class="gate-logo">🎙️ 惊天语录</div>
+    <div class="gate-logo">🎙️ 丛录</div>
     <div class="gate-title">这是一个共享记录本</div>
     <div class="gate-sub" id="gateSub">请输入访问口令，30 天内免重复输入</div>
     <input class="gate-input" id="gateInput" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="访问口令" autocomplete="off" />
@@ -623,7 +623,18 @@ async function downloadAudio(id){
 }
 async function delRec(id){
   if(!confirm('确定删除这条记录？')) return;
-  await dbDel(id); updateCount(); renderList(); toast('已删除');
+  const all=await dbAll(); const r=all.find(x=>x.id===id);
+  await dbDel(id); updateCount(); renderList(); toast('已删除本地记录');
+  // 同步删除百度网盘上的对应文件（.mp3 + .md）
+  if(r && r.createdAt!=null){
+    try{
+      const resp=await fetch('/api/delete',{method:'POST',headers:{'content-type':'application/json','x-gate-token':gateToken||''},body:JSON.stringify({title:r.title||'', createdAt:r.createdAt})});
+      if(resp.status===401){ const j=await resp.json().catch(()=>({})); if(j.error==='ACCESS_DENIED'){ onAccessDenied(); return; } }
+      const j=await resp.json().catch(()=>({}));
+      if(j.ok) toast('网盘文件也已删除 ✓');
+      else if(j.error) console.warn('网盘删除未成功：', j.error);
+    }catch(e){ console.warn('网盘删除出错：', e.message); }
+  }
 }
 async function changeSpeaker(id, sp){
   const all=await dbAll(); const r=all.find(x=>x.id===id);

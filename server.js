@@ -1,10 +1,10 @@
 /*
- * 惊天语录 · 百度网盘同步后端（零依赖，仅需 Node 18+）
+ * 丛录 · 百度网盘同步后端（零依赖，仅需 Node 18+）
  * 功能：
  *   1) 托管 recorder.html（同一端口，麦克风在 localhost 下可用）
  *   2) 百度网盘开放平台 OAuth2 授权码流程（换取 access_token + refresh_token）
  *   3) 通过 XPan API 三步法（precreate -> upload -> create）上传音频 + markdown 纪要
- *      到 /apps/<应用名>/惊天语录/ 目录
+ *      到 /apps/<应用名>/丛录/ 目录
  *
  * 运行： node server.js        （默认端口 8000）
  * 可选环境变量：
@@ -197,24 +197,27 @@ async function uploadFile(remotePath, buffer) {
     rtype: '1',
     block_list: JSON.stringify(blockList)
   });
-  if (pre.errno !== 0 && pre.errno !== undefined) {
+  if (pre.errno !== 0 && pre.errno !== -8) {
     throw new Error('precreate 失败 errno=' + pre.errno + (pre.errmsg ? ' ' + pre.errmsg : ''));
   }
+  console.log('[baidu] precreate ->', JSON.stringify(pre));
   const uploadid = pre.uploadid;
   if (!uploadid) throw new Error('precreate 未返回 uploadid');
-  // 3) 逐片上传
+  // 3) 逐片上传（raw binary：百度 XPan 最稳妥的方式，避免 multipart 在 Node fetch 下落盘失败）
   for (let i = 0; i < parts.length; i++) {
-    const form = new FormData();
-    form.append('file', new Blob([parts[i]]), 'file');
-    form.append('path', remotePath);
-    form.append('uploadid', uploadid);
-    form.append('partseq', String(i));
-    const r = await fetch(`https://pan.baidu.com/rest/2.0/xpan/file?method=upload&access_token=${encodeURIComponent(tokens.access_token)}`, {
+    const upUrl = `https://pan.baidu.com/rest/2.0/xpan/file?method=upload`
+      + `&access_token=${encodeURIComponent(tokens.access_token)}`
+      + `&path=${encodeURIComponent(remotePath)}`
+      + `&uploadid=${encodeURIComponent(uploadid)}`
+      + `&partseq=${i}`
+      + `&type=0`;
+    const r = await fetch(upUrl, {
       method: 'POST',
-      headers: { 'User-Agent': 'pan.baidu.com' },
-      body: form
+      headers: { 'User-Agent': 'pan.baidu.com', 'Content-Type': 'application/octet-stream' },
+      body: parts[i]
     });
     const j = await r.json().catch(() => ({}));
+    console.log(`[baidu] upload 分片${i} ->`, JSON.stringify(j));
     if (j.errno !== 0 && j.errno !== undefined) {
       throw new Error('upload 分片 ' + i + ' 失败 errno=' + j.errno + (j.errmsg ? ' ' + j.errmsg : ''));
     }
@@ -228,6 +231,7 @@ async function uploadFile(remotePath, buffer) {
     uploadid,
     rtype: '1'
   });
+  console.log('[baidu] create ->', JSON.stringify(cre));
   if (cre.errno !== 0 && cre.errno !== undefined) {
     throw new Error('create 失败 errno=' + cre.errno + (cre.errmsg ? ' ' + cre.errmsg : ''));
   }
@@ -240,7 +244,7 @@ function buildNote(meta) {
   const fmt = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   const mm = Math.floor((meta.duration || 0) / 60), ss = Math.floor((meta.duration || 0) % 60);
   const dur = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-  return `# ${meta.title || '惊天语录'}\n\n` +
+  return `# ${meta.title || '丛录'}\n\n` +
     `- 时间：${fmt}\n` +
     `- 说话人：${meta.speaker || '未指定'}\n` +
     `- 地点：${meta.locationName || '未记录'}\n` +
@@ -379,15 +383,54 @@ const server = http.createServer(async (req, res) => {
       const base = `${safeName(meta.title)}_${fileTs(meta.createdAt)}`;
       const audioName = base + (audio.name && audio.name.includes('.') ? path.extname(audio.name) : '.webm');
       const noteName = base + '.md';
-      const dir = `/apps/${tokens.appName}/惊天语录`;
+      const dir = `/apps/${tokens.appName}/丛录`;
       const audioPath = `${dir}/${audioName}`;
       const notePath = `${dir}/${noteName}`;
+      console.log(`[baidu] /api/save 开始：audio=${audioPath} size=${audioBuf.length}B dir=${dir}`);
       try {
-        await ensureDir(dir);  // 先创建 /apps/<应用名>/惊天语录 目录
+        await ensureDir(dir);  // 先创建 /apps/<应用名>/丛录 目录
         await uploadFile(audioPath, audioBuf);
         await uploadFile(notePath, Buffer.from(buildNote(meta), 'utf8'));
+        console.log('[baidu] /api/save 完成：', audioPath, notePath);
         return sendJSON(res, 200, { ok: true, audioPath, notePath });
       } catch (e) {
+        console.error('[baidu] /api/save 失败：', e.message);
+        return sendJSON(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // 删除：同步删除百度网盘上的音频 + 纪要文件
+    if (p === '/api/delete' && req.method === 'POST') {
+      if (ACCESS_PASS && !verifyGate(req.headers['x-gate-token'])) {
+        return sendJSON(res, 401, { ok: false, error: 'ACCESS_DENIED' });
+      }
+      const t = await ensureToken();
+      if (!t.ok) return sendJSON(res, 401, { ok: false, error: t.error });
+      if (!tokens.appName) return sendJSON(res, 400, { ok: false, error: '未配置应用目录名(appName)' });
+      const buf = await readBody(req);
+      let body; try { body = JSON.parse(buf.toString('utf8')); } catch { return sendJSON(res, 400, { ok: false, error: '参数错误' }); }
+      const title = body.title || '';
+      const createdAt = body.createdAt;
+      if (!createdAt) return sendJSON(res, 400, { ok: false, error: '缺少 createdAt' });
+      const base = `${safeName(title)}_${fileTs(createdAt)}`;
+      const dir = `/apps/${tokens.appName}/丛录`;
+      const paths = [`${dir}/${base}.mp3`, `${dir}/${base}.md`];
+      console.log('[baidu] /api/delete 开始：', paths);
+      try {
+        const delUrl = `https://pan.baidu.com/rest/2.0/xpan/file?method=filemanager&opera=delete&access_token=${encodeURIComponent(tokens.access_token)}`;
+        const r = await fetch(delUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded', 'User-Agent': 'pan.baidu.com' },
+          body: new URLSearchParams({ filelist: JSON.stringify(paths), async: '0' }).toString()
+        });
+        const j = await r.json().catch(() => ({}));
+        console.log('[baidu] /api/delete 结果：', JSON.stringify(j));
+        if (j.errno === 0) return sendJSON(res, 200, { ok: true, paths });
+        // 文件不存在(-7/-9 等)也视为已删除，不阻塞本地删除
+        if (j.errno === -7 || j.errno === -9) return sendJSON(res, 200, { ok: true, paths, skipped: '文件不存在' });
+        return sendJSON(res, 500, { ok: false, error: (j.errmsg || '删除失败 errno=' + j.errno) });
+      } catch (e) {
+        console.error('[baidu] /api/delete 失败：', e.message);
         return sendJSON(res, 500, { ok: false, error: e.message });
       }
     }
@@ -400,6 +443,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const shown = PUBLIC_URL || ('http://localhost:' + PORT);
-  console.log('惊天语录服务已启动：' + shown);
+  console.log('丛录服务已启动：' + shown);
   console.log('百度网盘令牌文件：' + TOKEN_FILE);
 });
