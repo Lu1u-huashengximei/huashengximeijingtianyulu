@@ -267,6 +267,24 @@ const server = http.createServer(async (req, res) => {
     if (p === '/' || p === '/recorder.html') { serveHTML(res); return; }
     if (p === '/healthz') { res.writeHead(200); res.end('ok'); return; }
 
+    // PWA：manifest 与图标托管（支持"添加到主屏幕"）
+    if (p === '/manifest.json') {
+      fs.readFile(path.join(__dirname, 'manifest.json'), (err, buf) => {
+        if (err) { res.writeHead(404); res.end('manifest not found'); return; }
+        res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8' });
+        res.end(buf);
+      });
+      return;
+    }
+    if (p === '/icon.svg') {
+      fs.readFile(path.join(__dirname, 'icon.svg'), (err, buf) => {
+        if (err) { res.writeHead(404); res.end('icon not found'); return; }
+        res.writeHead(200, { 'content-type': 'image/svg+xml; charset=utf-8' });
+        res.end(buf);
+      });
+      return;
+    }
+
     // 访问口令：是否开启 + 校验
     if (p === '/api/gate/status') {
       return sendJSON(res, 200, { enabled: !!ACCESS_PASS });

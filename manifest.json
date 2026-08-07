@@ -1,0 +1,20 @@
+{
+  "name": "丛录 · 录音转文字",
+  "short_name": "丛录",
+  "description": "手机录音转文字，自动同步到共享百度网盘",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6fb",
+  "theme_color": "#5b6cff",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
