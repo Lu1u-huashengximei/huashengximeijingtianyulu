@@ -85,6 +85,7 @@
   .sp.active { background: var(--brand); color: #fff; border-color: var(--brand); }
 
   .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 2px 9px; margin-left: 7px; vertical-align: middle; }
+  .sp-select { font-size: 12px; font-weight: 600; color: var(--brand); background: var(--brand-soft); border: 1px solid #d0d4e8; border-radius: 6px; padding: 2px 5px; margin-left: 7px; vertical-align: middle; cursor: pointer; outline: none; }
   .sp-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .sf { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 13px; color: var(--ink); cursor: pointer; }
   .sf.active { background: var(--brand); color: #fff; border-color: var(--brand); }
@@ -112,6 +113,10 @@
   .btn.ghost { background: var(--bg); color: var(--ink); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .loc-note { font-size: 12px; color: var(--muted); margin-bottom: 10px; text-align: left; }
+  .loc-edit { text-align: left; margin-bottom: 12px; }
+  .loc-edit-label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+  .loc-edit .field { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font-size: 15px; background: var(--bg); color: var(--ink); }
+  .loc-edit .field:focus { outline: none; border-color: var(--brand); }
 
   .sync-box { margin-top: 16px; text-align: left; background: var(--bg); border-radius: 14px; padding: 2px 14px; }
   .sync-box summary { cursor: pointer; font-size: 14px; font-weight: 600; padding: 10px 0; color: var(--ink); outline: none; }
@@ -174,6 +179,11 @@
       <div class="save-box" id="saveBox">
         <input class="field" id="titleInput" placeholder="给这条记录起个名字（可留空，自动用时间命名）" />
         <div class="loc-note" id="locNote"></div>
+        <div class="loc-edit" id="locEditWrap" style="display:none">
+          <label class="loc-edit-label">地点（可手动修改）</label>
+          <input class="field" id="locEditInput" list="locSuggest" placeholder="自动获取的位置，可手动修改或留空" autocomplete="off" />
+          <datalist id="locSuggest"></datalist>
+        </div>
         <div class="row">
           <button class="btn ghost" onclick="discardRecording()">丢弃</button>
           <button class="btn" onclick="saveRecording()">保存</button>
@@ -209,6 +219,7 @@
       <button class="sf active" data-f="" onclick="setFilter('')">全部</button>
       <button class="sf" data-f="花生" onclick="setFilter('花生')">花生</button>
       <button class="sf" data-f="西梅" onclick="setFilter('西梅')">西梅</button>
+      <button class="sf" data-f="其他" onclick="setFilter('其他')">其他</button>
     </div>
     <div class="sp-filter" id="locFilter"></div>
     <div id="listContainer"></div>
@@ -390,10 +401,20 @@ async function startRecord(){
   mediaRecorder = new MediaRecorder(micStream, mime?{mimeType:mime}:undefined);
   mediaRecorder.ondataavailable = e=>{ if(e.data.size>0) chunks.push(e.data); };
   // 关键：stop() 后数据异步返回，必须在 onstop 里组装 blob，否则会存成空录音（无法播放/上传）
-  mediaRecorder.onstop = () => {
+  mediaRecorder.onstop = async () => {
     pendingBlob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
     pendingDuration = (Date.now()-recStart)/1000;
     $('titleInput').value = fmtDate(recStart);
+    let loc = null;
+    try { loc = await pendingLocation; } catch(_){}
+    $('locEditInput').value = loc ? (loc.name||'') : '';
+    $('locEditWrap').style.display = 'block';
+    // 用历史地点填充下拉建议
+    try{
+      const hist = (await dbAll()).map(r=>r.location&&r.location.name).filter(Boolean);
+      const uniq = [...new Set(hist)];
+      $('locSuggest').innerHTML = uniq.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+    }catch(_){}
     $('saveBox').classList.add('show');
   };
   mediaRecorder.start();
@@ -433,6 +454,9 @@ function toggleRecord(){ recording ? stopRecord() : startRecord(); }
 async function saveRecording(){
   if(!pendingBlob){ toast('没有可保存的录音'); return; }
   const loc = await pendingLocation;
+  // 地点：优先用用户手动填写；留空则保留自动获取的；都没有则为空
+  const locEdit = $('locEditInput').value.trim();
+  const finalLoc = locEdit ? { name: locEdit } : loc;
   const rec = {
     id: Date.now(),
     title: $('titleInput').value.trim() || fmtDate(recStart),
@@ -440,8 +464,8 @@ async function saveRecording(){
     duration: pendingDuration,
     mime: pendingBlob.type,
     transcript: finalText.trim(),
-    speaker: currentSpeaker,
-    location: loc,
+    speaker: currentSpeaker || '其他',
+    location: finalLoc,
     blob: pendingBlob
   };
   await dbPut(rec);
@@ -457,6 +481,7 @@ async function saveRecording(){
   $('timer').textContent='00:00'; $('status').textContent='已保存 ✓';
   $('live').innerHTML='<span class="placeholder">录音时的文字会实时显示在这里…</span>';
   $('locNote').textContent='';
+  $('locEditInput').value=''; $('locEditWrap').style.display='none';
   currentSpeaker=''; document.querySelectorAll('#speakers .sp').forEach(b=>b.classList.remove('active'));
   updateCount();
   toast('已保存到「我的记录」');
@@ -563,10 +588,13 @@ async function renderList(){
   if(list.length===0){ box.innerHTML='<div class="empty">'+(all.length===0?'还没有记录，去「录音」页录一条吧':'没有匹配的记录')+'</div>'; return; }
   box.innerHTML = list.map(r=>{
     const url = URL.createObjectURL(r.blob);
-    const badge = r.speaker ? `<span class="badge">${escapeHtml(r.speaker)}</span>` : '';
+    const sp = r.speaker || '其他';
+    const spOpts = ['花生','西梅','其他'].map(s=>
+      `<option value="${s}"${s===sp?' selected':''}>${s}</option>`
+    ).join('');
     return `<div class="item" data-id="${r.id}">
       <div class="top">
-        <div><div class="title">${escapeHtml(r.title)}${badge}</div><div class="meta">${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}${r.location?(' · 📍 '+escapeHtml(r.location.name)):''}</div></div>
+        <div><div class="title">${escapeHtml(r.title)} <select class="sp-select" onchange="changeSpeaker(${r.id},this.value)">${spOpts}</select></div><div class="meta">${fmtDate(r.createdAt)} · ${fmtTime(r.duration)}${r.location?(' · 📍 '+escapeHtml(r.location.name)):''}</div></div>
       </div>
       <audio controls src="${url}"></audio>
       <div class="text">${r.transcript?escapeHtml(r.transcript):'<span style="color:#8a90a2">（无文字记录）</span>'}</div>
@@ -596,6 +624,13 @@ async function downloadAudio(id){
 async function delRec(id){
   if(!confirm('确定删除这条记录？')) return;
   await dbDel(id); updateCount(); renderList(); toast('已删除');
+}
+async function changeSpeaker(id, sp){
+  const all=await dbAll(); const r=all.find(x=>x.id===id);
+  if(!r) return;
+  r.speaker = sp;
+  await dbPut(r);
+  toast('已改为「'+sp+'」');
 }
 
 /* 导出当前筛选结果为可打印纪要页 */

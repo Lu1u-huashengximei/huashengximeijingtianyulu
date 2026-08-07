@@ -162,17 +162,19 @@ async function ensureDir(remoteDir) {
   // 百度 XPan 的 create 接口：isdir=1 创建目录
   const parts = remoteDir.split('/').filter(Boolean);
   let cur = '';
-  for (const part of parts) {
-    cur += '/' + part;
+  // /apps 与 /apps/<应用名> 是百度系统保留根目录，授权时已自动创建，应用无权/无需创建，
+  // 从应用专属子目录开始创建即可，避免 errno=102（对保留目录创建失败）导致整体失败。
+  const startIdx = (parts[0] === 'apps') ? 2 : 0;
+  for (let i = startIdx; i < parts.length; i++) {
+    cur += '/' + parts[i];
     try {
       const r = await baiduPost('create', { path: cur, isdir: '1', size: '0' });
-      if (r.errno !== 0 && r.errno !== -8 && r.errno !== 31029 && r.errno !== undefined) {
-        // -8 = 目录已存在（部分版本），31029 = 已存在，其他错误抛出
-        if (r.errno !== -8 && r.errno !== 31029) throw new Error(`创建目录 ${cur} 失败 errno=${r.errno} ${r.errmsg||''}`);
+      // 0 成功；-8 / 31029 / 102 均表示已存在或保留目录，忽略继续
+      if (r.errno !== 0 && r.errno !== -8 && r.errno !== 31029 && r.errno !== 102) {
+        throw new Error(`创建目录 ${cur} 失败 errno=${r.errno} ${r.errmsg || ''}`);
       }
     } catch (e) {
-      // 如果是"已存在"类错误，忽略继续
-      if (!e.message.includes('-8') && !e.message.includes('31029') && !e.message.includes('已存在')) throw e;
+      if (!/-(8|102)|31029|已存在/.test(e.message)) throw e;
     }
   }
 }
