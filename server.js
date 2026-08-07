@@ -138,7 +138,7 @@ async function ensureToken() {
       catch (e) { return { ok: false, error: '令牌刷新失败：' + e.message }; }
     } else {
       return { ok: false, error: '令牌已过期且无刷新令牌，请重新授权' };
-  }
+    }
   }
   return { ok: true };
 }
@@ -381,7 +381,8 @@ const server = http.createServer(async (req, res) => {
       if (!audioBuf.length) return sendJSON(res, 400, { ok: false, error: '音频为空' });
 
       const base = `${safeName(meta.title)}_${fileTs(meta.createdAt)}`;
-      const audioName = base + (audio.name && audio.name.includes('.') ? path.extname(audio.name) : '.webm');
+      // 网盘音频统一存为 .mp3（满足「网盘只存 mp3」要求；内容与删除端一致，确保删除能精准匹配）
+      const audioName = base + '.mp3';
       const noteName = base + '.md';
       const dir = `/apps/${tokens.appName}/丛录`;
       const audioPath = `${dir}/${audioName}`;
