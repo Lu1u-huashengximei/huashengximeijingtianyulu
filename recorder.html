@@ -309,7 +309,7 @@ function renderLocFilter(all){
   const hasNone = all.some(r=>!r.location);
   let html = `<button class="sf ${currentLocFilter===''?'active':''}" onclick="setLocFilter('')">全部地点</button>`;
   if(hasNone) html += `<button class="sf ${currentLocFilter==='__none__'?'active':''}" onclick="setLocFilter('__none__')">未记录</button>`;
-  names.forEach(n=>{ html += `<button class="sf ${currentLocFilter===n?'active':''}" onclick="setLocFilter(${JSON.stringify(n)})">${escapeHtml(n)}</button>`; });
+  names.forEach(n=>{ const arg = "'" + n.replace(/'/g, "\\'") + "'"; html += `<button class="sf ${currentLocFilter===n?'active':''}" onclick="setLocFilter(${arg})">${escapeHtml(n)}</button>`; });
   $('locFilter').innerHTML = html;
 }
 
