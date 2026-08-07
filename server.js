@@ -300,7 +300,8 @@ const server = http.createServer(async (req, res) => {
         authorized: !!(tokens.access_token && (!tokens.expires_at || tokens.expires_at > nowMs())),
         expires_at: tokens.expires_at || 0,
         appName: tokens.appName || '',
-        akMasked: tokens.ak ? tokens.ak.slice(0, 4) + '****' : ''
+        akMasked: tokens.ak ? tokens.ak.slice(0, 4) + '****' : '',
+        publicUrl: PUBLIC_URL || ''
       });
     }
 

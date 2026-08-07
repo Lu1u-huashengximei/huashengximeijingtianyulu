@@ -199,6 +199,7 @@
           <input class="field" id="appNameInput" placeholder="应用目录名（百度网盘应用的名称）" oninput="localStorage.setItem('bd_app',this.value.trim())" />
           <button class="btn ghost" onclick="saveBaiduConfig()" style="margin-bottom:10px">保存配置</button>
           <div id="baiduStatus" class="sync-tip">未连接</div>
+          <div id="redirectTip" class="sync-tip" style="margin-top:6px; color:var(--muted); font-size:12px"></div>
           <button class="btn" onclick="baiduAuth()" id="authBtn">前往授权</button>
           <button class="btn ghost" onclick="copyRefreshToken()" id="copyRtBtn" style="margin-top:10px; display:none">复制 refresh_token（固化用，防灾重启）</button>
           <p class="sync-tip" id="copyRtTip" style="display:none; margin-top:8px">复制后，把这段字符填到云托管环境变量 <code>BAIDU_REFRESH_TOKEN</code> 里并重新发布，以后服务器重启也能自动恢复百度授权，不用再手动授权。</p>
@@ -519,6 +520,9 @@ async function refreshBaiduStatus(){
       $('copyRtBtn').style.display=''; $('copyRtTip').style.display=''; }
     else { el.textContent='已配置（'+r.akMasked+'），未授权 → 点「前往授权」'; el.style.color='#e0902b';
       $('copyRtBtn').style.display='none'; $('copyRtTip').style.display='none'; }
+    $('redirectTip').textContent = r.publicUrl
+      ? ('百度开放平台「授权回调地址」必须登记为：' + r.publicUrl + '/oauth/baidu/callback')
+      : '（未检测到 PUBLIC_URL，回调地址将无法匹配，请在云托管环境变量设置 PUBLIC_URL 为你的线上域名）';
   }catch(_){ /* 后端不可达时静默 */ }
 }
 async function copyRefreshToken(){
